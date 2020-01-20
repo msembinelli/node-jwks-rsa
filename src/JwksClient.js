@@ -1,18 +1,18 @@
-import debug from 'debug';
-import axios from 'axios';
+import debug from "debug";
+import axios from "axios";
 
-import ArgumentError from './errors/ArgumentError';
-import JwksError from './errors/JwksError';
-import SigningKeyNotFoundError from './errors/SigningKeyNotFoundError';
+import ArgumentError from "./errors/ArgumentError";
+import JwksError from "./errors/JwksError";
+import SigningKeyNotFoundError from "./errors/SigningKeyNotFoundError";
 
 import {
   certToPEM,
   rsaPublicKeyToPEM
-} from './utils';
+} from "./utils";
 import {
   cacheSigningKey,
   rateLimitSigningKey
-} from './wrappers';
+} from "./wrappers";
 
 export class JwksClient {
   constructor(options) {
@@ -22,7 +22,7 @@ export class JwksClient {
       strictSsl: true,
       ...options
     };
-    this.logger = debug('jwks');
+    this.logger = debug("jwks");
 
     // Initialize wrappers.
     if (this.options.rateLimit) {
@@ -35,24 +35,33 @@ export class JwksClient {
 
   getKeys(cb) {
     this.logger(`Fetching keys from '${this.options.jwksUri}'`);
-    axios({
-      json: true,
-      url: this.options.jwksUri,
-      strictSSL: this.options.strictSsl,
-      headers: this.options.requestHeaders,
-      agentOptions: this.options.requestAgentOptions
-    }).then((res) => {
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        this.logger('Failure:', res && res.data);
-        return cb(new JwksError(res.data && (res.data.message || res.data) || res.statusMessage || `Http Error ${res.statusCode}`));
-      }
-      this.logger('Keys:', res.data.keys);
-      return cb(null, res.data.keys);
-
-    }).catch((err) => {
-      this.logger('Failure:', err);
-      return cb(new JwksError(err.response ? err.response.data : err));
-    });
+    axios
+      .get(this.options.jwksUri, {
+        json: true,
+        url: this.options.jwksUri,
+        strictSSL: this.options.strictSsl,
+        headers: this.options.requestHeaders,
+        agentOptions: this.options.requestAgentOptions
+      })
+      .then(response => {
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          this.logger("Failure:", response && response.data);
+          return {
+            err: new JwksError(
+              (response.data && (response.data.message || response.data)) ||
+              response.statusMessage ||
+              `Http Error ${response.statusCode}`
+            ),
+            keys: null
+          };
+        }
+        this.logger("Keys:", response.data.keys);
+        return cb(null, response.data.keys)
+      })
+      .catch(error => {
+        this.logger("Failure:", error);
+        return cb(error);
+      })
   }
 
   getSigningKeys(cb) {
@@ -62,21 +71,21 @@ export class JwksClient {
       }
 
       if (!keys || !keys.length) {
-        return cb(new JwksError('The JWKS endpoint did not contain any keys'));
+        return cb(new JwksError("The JWKS endpoint did not contain any keys"));
       }
 
       const signingKeys = keys
-        .filter((key) => {
-          if (key.kty !== 'RSA') {
+        .filter(key => {
+          if (key.kty !== "RSA") {
             return false;
           }
           if (!key.kid) {
             return false;
           }
-          if (key.hasOwnProperty('use') && key.use !== 'sig') {
+          if (key.hasOwnProperty("use") && key.use !== "sig") {
             return false;
           }
-          return ((key.x5c && key.x5c.length) || (key.n && key.e));
+          return (key.x5c && key.x5c.length) || (key.n && key.e);
         })
         .map(key => {
           if (key.x5c && key.x5c.length) {
@@ -95,10 +104,12 @@ export class JwksClient {
         });
 
       if (!signingKeys.length) {
-        return cb(new JwksError('The JWKS endpoint did not contain any signing keys'));
+        return cb(
+          new JwksError("The JWKS endpoint did not contain any signing keys")
+        );
       }
 
-      this.logger('Signing Keys:', signingKeys);
+      this.logger("Signing Keys:", signingKeys);
       return cb(null, signingKeys);
     });
   }
@@ -116,8 +127,12 @@ export class JwksClient {
         return cb(null, key);
       } else {
         this.logger(`Unable to find a signing key that matches '${kid}'`);
-        return cb(new SigningKeyNotFoundError(`Unable to find a signing key that matches '${kid}'`));
+        return cb(
+          new SigningKeyNotFoundError(
+            `Unable to find a signing key that matches '${kid}'`
+          )
+        );
       }
     });
-  }
+  };
 }
