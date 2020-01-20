@@ -1,5 +1,5 @@
 import debug from 'debug';
-import request from 'request';
+import axios from 'axios';
 
 import ArgumentError from './errors/ArgumentError';
 import JwksError from './errors/JwksError';
@@ -35,23 +35,23 @@ export class JwksClient {
 
   getKeys(cb) {
     this.logger(`Fetching keys from '${this.options.jwksUri}'`);
-    request({
+    axios({
       json: true,
-      uri: this.options.jwksUri,
+      url: this.options.jwksUri,
       strictSSL: this.options.strictSsl,
       headers: this.options.requestHeaders,
       agentOptions: this.options.requestAgentOptions
-    }, (err, res) => {
-      if (err || res.statusCode < 200 || res.statusCode >= 300) {
-        this.logger('Failure:', res && res.body || err);
-        if (res) {
-          return cb(new JwksError(res.body && (res.body.message || res.body) || res.statusMessage || `Http Error ${res.statusCode}`));
-        }
-        return cb(err);
+    }).then((res) => {
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        this.logger('Failure:', res && res.data);
+        return cb(new JwksError(res.data && (res.data.message || res.data) || res.statusMessage || `Http Error ${res.statusCode}`));
       }
+      this.logger('Keys:', res.data.keys);
+      return cb(null, res.data.keys);
 
-      this.logger('Keys:', res.body.keys);
-      return cb(null, res.body.keys);
+    }).catch((err) => {
+      this.logger('Failure:', err);
+      return cb(new JwksError(err.response ? err.response.data : err));
     });
   }
 
@@ -66,17 +66,17 @@ export class JwksClient {
       }
 
       const signingKeys = keys
-          .filter((key) => {
-            if(key.kty !== 'RSA'){
-              return false;
-            }
-            if(!key.kid){
-              return false;
-            }
-            if(key.hasOwnProperty('use') && key.use !== 'sig'){
-              return false;
-            }  
-            return ((key.x5c && key.x5c.length) || (key.n && key.e));
+        .filter((key) => {
+          if (key.kty !== 'RSA') {
+            return false;
+          }
+          if (!key.kid) {
+            return false;
+          }
+          if (key.hasOwnProperty('use') && key.use !== 'sig') {
+            return false;
+          }
+          return ((key.x5c && key.x5c.length) || (key.n && key.e));
         })
         .map(key => {
           if (key.x5c && key.x5c.length) {
